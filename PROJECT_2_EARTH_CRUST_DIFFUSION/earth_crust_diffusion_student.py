@@ -81,3 +81,8 @@ if __name__ == "__main__":
         print(f"计算完成，温度场形状: {T.shape}")
     except NotImplementedError as e:
         print(e)
+    # 运行模拟
+    depth, T = solve_earth_crust_diffusion()
+    
+    # 绘制季节性温度轮廓
+    plot_seasonal_profiles(depth, T)
