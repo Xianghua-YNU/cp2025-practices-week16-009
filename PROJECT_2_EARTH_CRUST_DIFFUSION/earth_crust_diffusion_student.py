@@ -75,6 +75,13 @@ def plot_seasonal_profiles(depth, temperature, seasons=[90, 180, 270, 365]):
     plt.show()
     
 if __name__ == "__main__":
+
+        # 测试代码
+    try:
+        depth, T = solve_earth_crust_diffusion()
+        print(f"计算完成，温度场形状: {T.shape}")
+    except NotImplementedError as e:
+        print(e)
     # 运行模拟
     depth, T = solve_earth_crust_diffusion()
     
