@@ -6,7 +6,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-def solve_earth_crust_diffusion():
+def solve_earth_crust_diffusion(h=1.0, a=1.0, M=21, N=366, years=10):
     """
     实现显式差分法求解地壳热扩散问题
     
