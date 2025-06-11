@@ -6,6 +6,15 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+# 物理常数
+D = 0.1  # 热扩散率 (m^2/day)
+A = 10.0  # 年平均地表温度 (°C)
+B = 12.0  # 地表温度振幅 (°C)
+TAU = 365.0  # 年周期 (days)
+T_BOTTOM = 11.0  # 20米深处温度 (°C)
+T_INITIAL = 10.0  # 初始温度 (°C)
+DEPTH_MAX = 20.0  # 最大深度 (m)
+
 def solve_earth_crust_diffusion(h=1.0, a=1.0, M=21, N=366, years=10):
     """
     实现显式差分法求解地壳热扩散问题
