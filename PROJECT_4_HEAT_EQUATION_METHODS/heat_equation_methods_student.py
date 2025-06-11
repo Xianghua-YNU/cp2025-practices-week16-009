@@ -31,17 +31,17 @@ class HeatEquationSolver:
             nx (int): 空间网格点数
             T_final (float): 最终模拟时间
         """
-        self.L = L
-        self.alpha = alpha
-        self.nx = nx
-        self.T_final = T_final
+        self.L = L               # 区域长度
+        self.alpha = alpha       # 热扩散系数
+        self.nx = nx             # 空间网格点数
+        self.T_final = T_final   # 最终模拟时间
         
         # 空间网格
-        self.x = np.linspace(0, L, nx)
-        self.dx = L / (nx - 1)
+        self.x = np.linspace(0, L, nx)    # 创建从0到L的等间距网格
+        self.dx = L / (nx - 1)            # 计算空间步长
         
         # 初始化解数组
-        self.u_initial = self._set_initial_condition()
+        self.u_initial = self._set_initial_condition()      # 设置初始条件
         
     def _set_initial_condition(self):
         """
@@ -99,15 +99,15 @@ class HeatEquationSolver:
         #   - 在指定时间点存储解
         # TODO: 返回结果字典
         # 稳定性
-        r = self.alpha * dt / (self.dx**2)
-        if r > 0.5:
+        r = self.alpha * dt / (self.dx**2)               # 计算稳定性参数
+        if r > 0.5:                                      # 检查显式方法的稳定性条件
             print(f"Warning: Stability condition violated! r = {r:.4f} > 0.5")
             print(f"Consider reducing dt to < {0.5 * self.dx**2 / self.alpha:.6f}")
         
-        # 
-        u = self.u_initial.copy()
-        t = 0.0
-        nt = int(self.T_final / dt) + 1
+        # 初始化
+        u = self.u_initial.copy()             # 复制初始条件
+        t = 0.0                               # 初始时间
+        nt = int(self.T_final / dt) + 1       # 计算时间步数
         
         # 存储结果
         results = {'times': [], 'solutions': [], 'method': 'Explicit FTCS'}
@@ -117,21 +117,20 @@ class HeatEquationSolver:
             results['times'].append(0.0)
             results['solutions'].append(u.copy())
         
-        start_time = time.time()
+        start_time = time.time()                # 开始计时
         
-        # Time stepping
         for n in range(1, nt):
-            # Apply Laplacian using scipy.ndimage.laplace
+            # # 使用scipy.ndimage.laplace应用拉普拉斯算子
             du_dt = r * laplace(u)
             u += du_dt
             
-            # Apply boundary conditions
+            # 应用边界条件
             u[0] = 0.0
             u[-1] = 0.0
             
             t = n * dt
             
-            # Store solution at specified times
+            # 在指定时间存储解
             for plot_time in plot_times:
                 if abs(t - plot_time) < dt/2 and plot_time not in [res_t for res_t in results['times']]:
                     results['times'].append(t)
@@ -179,46 +178,45 @@ class HeatEquationSolver:
         #   - 使用 scipy.linalg.solve_banded 求解
         #   - 更新解并应用边界条件
         # TODO: 返回结果字典
-        # Parameters
+        # 参数计算
         r = self.alpha * dt / (self.dx**2)
         nt = int(self.T_final / dt) + 1
         
-        # Initialize
+        # 初始化
         u = self.u_initial.copy()
         
-        # Build tridiagonal matrix for internal nodes
+        # 为内部节点构建三对角矩阵
         num_internal = self.nx - 2
         banded_matrix = np.zeros((3, num_internal))
         banded_matrix[0, 1:] = -r  # Upper diagonal
         banded_matrix[1, :] = 1 + 2*r  # Main diagonal
         banded_matrix[2, :-1] = -r  # Lower diagonal
         
-        # Storage for results
+        #结果存储
         results = {'times': [], 'solutions': [], 'method': 'Implicit BTCS'}
         
-        # Store initial condition
+        # 存储初始条件
         if 0 in plot_times:
             results['times'].append(0.0)
             results['solutions'].append(u.copy())
         
         start_time = time.time()
         
-        # Time stepping
         for n in range(1, nt):
-            # Right-hand side (internal nodes only)
+            # 右侧向量 (仅内部节点)
             rhs = u[1:-1].copy()
             
-            # Solve tridiagonal system
+            # 求解三对角系统
             u_internal_new = scipy.linalg.solve_banded((1, 1), banded_matrix, rhs)
             
-            # Update solution
+            # 更新解
             u[1:-1] = u_internal_new
-            u[0] = 0.0  # Boundary conditions
+            u[0] = 0.0  # 边界条件
             u[-1] = 0.0
             
             t = n * dt
             
-            # Store solution at specified times
+            # 在指定时间存储解
             for plot_time in plot_times:
                 if abs(t - plot_time) < dt/2 and plot_time not in [res_t for res_t in results['times']]:
                     results['times'].append(t)
