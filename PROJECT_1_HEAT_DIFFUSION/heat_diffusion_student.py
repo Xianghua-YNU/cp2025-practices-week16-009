@@ -38,7 +38,7 @@ def basic_heat_diffusion():
             u[i, j+1] = u[i, j] + r * (u[i+1, j] - 2*u[i, j] + u[i-1, j])
     
     return u
-    
+
 def analytical_solution(n_terms=100):
     """
     任务2: 解析解函数
@@ -64,7 +64,7 @@ def analytical_solution(n_terms=100):
             u_analytical[:, j] += amplitude * spatial * temporal[j]
     
     return u_analytical
-    
+
 def stability_analysis():
     """
     任务3: 数值解稳定性分析
@@ -111,10 +111,13 @@ def different_initial_condition():
             u[i, j+1] = u[i, j] + r * (u[i+1, j] - 2*u[i, j] + u[i-1, j])
     
     return u
-    
-def heat_diffusion_with_cooling():
+
+def heat_diffusion_with_cooling(h=0.01):
     """
     任务5: 包含牛顿冷却定律的热传导
+    
+    返回:
+        np.ndarray: 温度分布数组
     """
     u = np.zeros((Nx, Nt))
     u[1:-1, 0] = 100
@@ -139,13 +142,6 @@ def plot_3d_solution(u, dx, dt, Nt, title):
         dt (float): 时间步长
         Nt (int): 时间步数
         title (str): 图表标题
-    
-    返回:
-        None
-    
-    示例:
-        >>> u = np.zeros((100, 200))
-        >>> plot_3d_solution(u, 0.01, 0.5, 200, "示例")
     """
     x = np.linspace(0, L, u.shape[0])
     t = np.linspace(0, Nt*dt, u.shape[1])
