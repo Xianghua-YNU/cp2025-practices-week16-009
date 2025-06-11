@@ -4,7 +4,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import animation
-from scipy import linalg
+
 class QuantumTunnelingSolver:
     """量子隧穿求解器类
     
@@ -41,9 +41,8 @@ class QuantumTunnelingSolver:
         self.V = self.setup_potential()  # 调用 setup_potential() 方法
         
         # TODO: 初始化波函数矩阵和系数矩阵
-        self.C = np.zeros((Nx, Nt), dtype=complex)  # 复数矩阵，形状为 (Nx, Nt)
-        self.B = np.zeros((Nx, Nt), dtype=complex) # 复数矩阵，形状为 (Nx, Nt)
-        self.A = self.build_coefficient_matrix()
+        self.C = np.zeros((self.Nx, self.Nt), complex)
+        self.B = np.zeros((self.Nx, self.Nt), complex)
         
 
     def wavefun(self, x):
@@ -63,9 +62,7 @@ class QuantumTunnelingSolver:
         """
         # TODO: 实现高斯波包函数
         # 提示：包含动量项 exp(ik₀x) 和高斯包络 exp(-(x-x₀)²ln10(2)/d²)
-        gaussian_envelope = np.exp(-((x - self.x0)**2) * np.log(10) * 2 / (self.d**2))
-        momentum_term = np.exp(1j * self.k0 * x)
-        return momentum_term * gaussian_envelope
+        return np.exp(self.k0*1j*x)*np.exp(-(x-self.x0)**2*np.log10(2)/self.d**2)
 
     def setup_potential(self):
         """设置势垒函数
@@ -83,11 +80,9 @@ class QuantumTunnelingSolver:
         # 1. 初始化全零数组
         # 2. 在中间位置设置势垒高度
         # 3. 注意barrier_width必须是整数
-        V = np.zeros(self.Nx)
-        barrier_start = self.Nx // 2
-        barrier_end = barrier_start + self.barrier_width
-        V[barrier_start:barrier_end] = self.barrier_height
-        return V
+        self.V = np.zeros(self.Nx)
+        self.V[self.Nx//2:self.Nx//2+self.barrier_width] = self.barrier_height
+        return self.V
     def build_coefficient_matrix(self):
         """构建变形的Crank-Nicolson格式的系数矩阵
         
@@ -106,14 +101,9 @@ class QuantumTunnelingSolver:
         # 1. 使用 np.diag() 创建三对角矩阵
         # 2. 主对角线：-2+2j-self.V
         # 3. 上对角线和下对角线：全1数组
-        main_diag = -2 + 2j - self.V
-        off_diag = np.ones(self.Nx-1)
-        A = np.diag(main_diag) + np.diag(off_diag, k=1) + np.diag(off_diag, k=-1)
-        A[0, 0] = 1.0
-        A[0, 1] = 0.0
-        A[-1, -1] = 1.0
-        A[-1, -2] = 0.0
+        A = np.diag(-2+2j-self.V) + np.diag(np.ones(self.Nx-1),1) + np.diag(np.ones(self.Nx-1),-1)
         return A
+
     def solve_schrodinger(self):
         """求解一维含时薛定谔方程
         
@@ -133,22 +123,13 @@ class QuantumTunnelingSolver:
         # 2. 设置初始波函数 B[:,0] = wavefun(x)
         # 3. 对初始波函数进行归一化
         # 4. 时间循环：使用线性方程组求解进行时间演化
-        A = self.A
-        self.B[:, 0] = self.wavefun(self.x)
-        norm = np.sum(np.abs(self.B[:, 0])**2)
-        self.B[:, 0] /= np.sqrt(norm)
+        A = self.build_coefficient_matrix()
+        
+        self.B[:,0] = self.wavefun(self.x)
+        
         for t in range(self.Nt-1):
-            # 求解线性方程组 A * C[:,t+1] = 4j * B[:,t]
-            self.C[:, t+1] = 4j * linalg.solve(A, self.B[:, t])
-            
-            # 更新 B[:,t+1] = C[:,t+1] - B[:,t]
-            self.B[:, t+1] = self.C[:, t+1] - self.B[:, t]
-            
-            # 重新归一化以保持数值稳定性
-            if (t+1) % 10 == 0:
-                norm = np.sum(np.abs(self.B[:, t+1])**2)
-                self.B[:, t+1] /= np.sqrt(norm)
-                self.C[:, t+1] /= np.sqrt(norm)
+            self.C[:,t+1] = 4j*np.linalg.solve(A, self.B[:,t])
+            self.B[:,t+1] = self.C[:,t+1] - self.B[:,t]
         
         return self.x, self.V, self.B, self.C
     def calculate_coefficients(self):
@@ -172,24 +153,11 @@ class QuantumTunnelingSolver:
         # 2. 计算透射区域的概率（势垒右侧）
         # 3. 计算反射区域的概率（势垒左侧）
         # 4. 归一化处理
-        # 确定势垒位置
-        barrier_end = self.Nx // 2 + self.barrier_width
-        
-        # 计算最后一个时间步的波函数概率密度
-        prob_density = np.abs(self.B[:, -1])**2
-        
-        # 计算透射区域的概率（势垒右侧）
-        T = np.sum(prob_density[barrier_end:])
-        
-        # 计算反射区域的概率（势垒左侧）
-        R = np.sum(prob_density[:self.Nx//2])
-        
-        # 归一化处理
-        total_prob = np.sum(prob_density)
-        T /= total_prob
-        R /= total_prob
-        
-        return T, R
+        barrier_position = len(self.x)//2
+        transmitted_prob = np.sum(np.abs(self.B[barrier_position+self.barrier_width:, -1])**2)
+        reflected_prob = np.sum(np.abs(self.B[:barrier_position, -1])**2)
+        total_prob = np.sum(np.abs(self.B[:, -1])**2)
+        return transmitted_prob/total_prob, reflected_prob/total_prob
 
     def plot_evolution(self, time_indices=None):
         """绘制波函数演化图
@@ -209,34 +177,42 @@ class QuantumTunnelingSolver:
         # 5. 添加标题和标签
         # 设置默认时间索引
         if time_indices is None:
-            time_indices = [0, self.Nt//4, self.Nt//2, 3*self.Nt//4, self.Nt-1]
+            Nt = self.B.shape[1]
+            time_indices = [0, Nt//4, Nt//2, 3*Nt//4, Nt-1]
         
         # 创建子图布局
-        fig, axes = plt.subplots(len(time_indices), 1, figsize=(10, 12))
-        if len(time_indices) == 1:
-            axes = [axes]
+        fig, axes = plt.subplots(2, 3, figsize=(12, 8))
+        axes = axes.flatten()
+         # Add overall title with barrier parameters
+        fig.suptitle(f'Quantum Tunneling Evolution - Barrier Width: {self.barrier_width}, Barrier Height: {self.barrier_height}', 
+                     fontsize=14, fontweight='bold')
         
-        # 绘制每个时间步的波函数概率密度和势垒
-        for i, t in enumerate(time_indices):
-            # 计算概率密度 |ψ|²
-            prob_density = np.abs(self.B[:, t])**2
-            
-            # 绘制概率密度
-            axes[i].plot(self.x, prob_density, 'b-', label=f't = {t}')
-            
-            # 绘制势垒
-            scaled_V = self.V * np.max(prob_density) * 0.5 / np.max(self.V)
-            axes[i].plot(self.x, scaled_V, 'r-', label='Potential Barrier')
-            
-            # 添加标题和标签
-            axes[i].set_title(f'Wave Function at t = {t}')
-            axes[i].set_xlabel('Position (x)')
-            axes[i].set_ylabel('Probability Density |ψ|²')
-            axes[i].legend()
-            axes[i].grid(True)
+        for i, t_idx in enumerate(time_indices):
+            if i < len(axes):
+                ax = axes[i]
+                
+                # Plot probability density
+                prob_density = np.abs(self.B[:, t_idx])**2
+                ax.plot(self.x, prob_density, 'b-', linewidth=2, 
+                       label=f'|ψ|² at t={t_idx}')
+                
+                # Plot potential
+                ax.plot(self.x, self.V, 'k-', linewidth=2, 
+                       label=f'Barrier (Width={self.barrier_width}, Height={self.barrier_height})')
+                
+                ax.set_xlabel('Position')
+                ax.set_ylabel('Probability Density')
+                ax.set_title(f'Time step: {t_idx}')
+                ax.legend()
+                ax.grid(True, alpha=0.3)
+        
+        # Remove unused subplots
+        for i in range(len(time_indices), len(axes)):
+            fig.delaxes(axes[i])
         
         plt.tight_layout()
         plt.show()
+    
 
     def create_animation(self, interval=20):
         """创建波包演化动画
@@ -256,53 +232,34 @@ class QuantumTunnelingSolver:
         # 2. 创建线条对象
         # 3. 定义动画更新函数
         # 4. 使用 FuncAnimation 创建动画
-        # 设置图形和坐标轴
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.set_xlim(0, self.Nx)
-        ax.set_ylim(0, 0.1)  # 适当调整y轴范围以清晰显示波包
+        Nx, Nt = self.B.shape
         
-        # 创建线条对象
-        line_prob, = ax.plot([], [], 'b-', label='Probability Density |ψ|²')
-        line_pot, = ax.plot([], [], 'r-', label='Potential Barrier')
-        time_text = ax.text(0.02, 0.95, '', transform=ax.transAxes)
+        fig = plt.figure(figsize=(10, 6))
+        plt.axis([0, Nx, 0, np.max(self.V)*1.1])
         
-        # 绘制势垒（固定不变）
-        scaled_V = self.V * 0.05  # 缩放势垒高度以便于观察
-        ax.plot(self.x, scaled_V, 'r-')
+        # Add title with barrier parameters
+        plt.title(f'Quantum Tunneling Animation - Barrier Width: {self.barrier_width}, Barrier Height: {self.barrier_height}', 
+                 fontsize=12, fontweight='bold')
+        plt.xlabel('Position')
+        plt.ylabel('Probability Density / Potential')
         
-        # 添加图例和标签
-        ax.set_xlabel('Position (x)')
-        ax.set_ylabel('Probability Density')
-        ax.legend()
-        ax.grid(True)
+        myline, = plt.plot([], [], 'r', lw=2, label='|ψ|²')
+        myline1, = plt.plot(self.x, self.V, 'k', lw=2, 
+                           label=f'Barrier (Width={self.barrier_width}, Height={self.barrier_height})')
         
-        # 定义初始化函数
-        def init():
-            line_prob.set_data([], [])
-            line_pot.set_data([], [])
-            time_text.set_text('')
-            return line_prob, line_pot, time_text
+        plt.legend()
+        plt.grid(True, alpha=0.3)
         
-        # 定义动画更新函数
-        def update(frame):
-            # 计算概率密度
-            prob_density = np.abs(self.B[:, frame])**2
-            line_prob.set_data(self.x, prob_density)
-            
-            # 更新时间文本
-            time_text.set_text(f'Time step: {frame}')
-            
-            return line_prob, time_text
+        def animate(i):
+            myline.set_data(self.x, np.abs(self.B[:, i]))
+            myline1.set_data(self.x, self.V)
+            return myline, myline1
         
-        # 创建动画
-        frames = np.arange(0, self.Nt, 5)  # 减少帧数以加快动画速度
-        anim = animation.FuncAnimation(
-            fig, update, frames=frames, init_func=init, 
-            interval=interval, blit=True
-        )
-        
+        anim = animation.FuncAnimation(fig, animate, frames=Nt, interval=interval)
         return anim
-
+   
+        
+     
     def verify_probability_conservation(self):
         """验证概率守恒
         
@@ -318,11 +275,12 @@ class QuantumTunnelingSolver:
         # 1. 计算每个时间步的总概率
         # 2. 考虑空间步长dx的影响
         # 3. 返回概率数组用于分析
-        probabilities = np.zeros(self.Nt)
+        total_prob = np.zeros(self.Nt)
         for t in range(self.Nt):
-            probabilities[t] = np.sum(np.abs(self.B[:, t])**2)
+            total_prob[t] = np.sum(np.abs(self.B[:, t])**2)
         
-        return probabilities
+        return total_prob
+
     def demonstrate(self):
         """演示量子隧穿效应
         
@@ -344,39 +302,33 @@ class QuantumTunnelingSolver:
         # 4. 绘制演化图
         # 5. 验证概率守恒
         # 6. 创建动画
-        # 打印开始信息
-        print("开始量子隧穿效应模拟...")
-        print(f"势垒宽度: {self.barrier_width}, 势垒高度: {self.barrier_height}")
-        print(f"波包动量 k0: {self.k0}, 波包宽度 d: {self.d}")
+        print("Quantum Tunneling Simulation")
+        print("=" * 40)
         
-        # 调用solve_schrodinger()
+        # Solve the equation
+        print("Solving Schrodinger equation...")
         self.solve_schrodinger()
-        
-        # 计算并显示系数
         T, R = self.calculate_coefficients()
-        print(f"\n透射系数 T = {T:.6f}")
-        print(f"反射系数 R = {R:.6f}")
-        print(f"T + R = {T + R:.6f} (理论上应接近1)")
         
-        # 绘制演化图
+        print(f"\n势垒宽度:{self.barrier_width}, 势垒高度:{self.barrier_height} 结果")
+        print(f"Transmission coefficient: {T:.4f}")
+        print(f"Reflection coefficient: {R:.4f}")
+        print(f"Total (T + R): {T + R:.4f}")
+        
+        # Plot evolution
+        print("\nPlotting wave function evolution...")
         self.plot_evolution()
         
-        # 验证概率守恒
-        probabilities = self.verify_probability_conservation()
-        plt.figure(figsize=(10, 4))
-        plt.plot(np.arange(self.Nt), probabilities)
-        plt.title('Probability Conservation Check')
-        plt.xlabel('Time Step')
-        plt.ylabel('Total Probability')
-        plt.grid(True)
-        plt.ylim(0.95, 1.05)  # 设置y轴范围以便更清晰地观察
-        plt.show()
+        # Check probability conservation
+        total_prob = self.verify_probability_conservation()
+        print(f"\nProbability conservation:")
+        print(f"Initial probability: {total_prob[0]:.6f}")
+        print(f"Final probability: {total_prob[-1]:.6f}")
+        print(f"Relative change: {abs(total_prob[-1] - total_prob[0])/total_prob[0]*100:.4f}%")
         
-        # 创建动画
-        print("\n创建波包演化动画...")
+        # Create animation
+        print("\nCreating animation...")
         anim = self.create_animation()
-        
-        # 显示动画
         plt.show()
         
         return anim
