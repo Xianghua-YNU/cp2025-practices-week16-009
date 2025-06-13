@@ -31,17 +31,17 @@ class HeatEquationSolver:
             nx (int): 空间网格点数
             T_final (float): 最终模拟时间
         """
-        self.L = L
-        self.alpha = alpha
-        self.nx = nx
-        self.T_final = T_final
+        self.L = L               # 区域长度
+        self.alpha = alpha       # 热扩散系数
+        self.nx = nx             # 空间网格点数
+        self.T_final = T_final   # 最终模拟时间
         
         # 空间网格
-        self.x = np.linspace(0, L, nx)
-        self.dx = L / (nx - 1)
+        self.x = np.linspace(0, L, nx)    # 创建从0到L的等间距网格
+        self.dx = L / (nx - 1)            # 计算空间步长
         
         # 初始化解数组
-        self.u_initial = self._set_initial_condition()
+        self.u_initial = self._set_initial_condition()      # 设置初始条件
         
     def _set_initial_condition(self):
         """
@@ -53,7 +53,13 @@ class HeatEquationSolver:
         # TODO: 创建零数组
         # TODO: 设置初始条件（10 <= x <= 11 区域为1）
         # TODO: 应用边界条件
-        raise NotImplementedError(f"请在 {__file__} 中实现此函数")
+        u0 = np.zeros(self.nx)
+        mask = (self.x >= 10) & (self.x <= 11)
+        u0[mask] = 1.0
+        # 边界条件
+        u0[0] = 0.0
+        u0[-1] = 0.0
+        return u0
     
     def solve_explicit(self, dt=0.01, plot_times=None):
         """
@@ -92,7 +98,48 @@ class HeatEquationSolver:
         #   - 应用边界条件
         #   - 在指定时间点存储解
         # TODO: 返回结果字典
-        raise NotImplementedError(f"请在 {__file__} 中实现此函数")
+        # 稳定性
+        r = self.alpha * dt / (self.dx**2)               # 计算稳定性参数
+        if r > 0.5:                                      # 检查显式方法的稳定性条件
+            print(f"Warning: Stability condition violated! r = {r:.4f} > 0.5")
+            print(f"Consider reducing dt to < {0.5 * self.dx**2 / self.alpha:.6f}")
+        
+        # 初始化
+        u = self.u_initial.copy()             # 复制初始条件
+        t = 0.0                               # 初始时间
+        nt = int(self.T_final / dt) + 1       # 计算时间步数
+        
+        # 存储结果
+        results = {'times': [], 'solutions': [], 'method': 'Explicit FTCS'}
+        
+        # 存储初始条件
+        if 0 in plot_times:
+            results['times'].append(0.0)
+            results['solutions'].append(u.copy())
+        
+        start_time = time.time()                # 开始计时
+        
+        for n in range(1, nt):
+            # # 使用scipy.ndimage.laplace应用拉普拉斯算子
+            du_dt = r * laplace(u)
+            u += du_dt
+            
+            # 应用边界条件
+            u[0] = 0.0
+            u[-1] = 0.0
+            
+            t = n * dt
+            
+            # 在指定时间存储解
+            for plot_time in plot_times:
+                if abs(t - plot_time) < dt/2 and plot_time not in [res_t for res_t in results['times']]:
+                    results['times'].append(t)
+                    results['solutions'].append(u.copy())
+        
+        results['computation_time'] = time.time() - start_time
+        results['stability_parameter'] = r
+        
+        return results
     
     def solve_implicit(self, dt=0.1, plot_times=None):
         """
@@ -131,7 +178,54 @@ class HeatEquationSolver:
         #   - 使用 scipy.linalg.solve_banded 求解
         #   - 更新解并应用边界条件
         # TODO: 返回结果字典
-        raise NotImplementedError(f"请在 {__file__} 中实现此函数")
+        # 参数计算
+        r = self.alpha * dt / (self.dx**2)
+        nt = int(self.T_final / dt) + 1
+        
+        # 初始化
+        u = self.u_initial.copy()
+        
+        # 为内部节点构建三对角矩阵
+        num_internal = self.nx - 2
+        banded_matrix = np.zeros((3, num_internal))
+        banded_matrix[0, 1:] = -r  # Upper diagonal
+        banded_matrix[1, :] = 1 + 2*r  # Main diagonal
+        banded_matrix[2, :-1] = -r  # Lower diagonal
+        
+        #结果存储
+        results = {'times': [], 'solutions': [], 'method': 'Implicit BTCS'}
+        
+        # 存储初始条件
+        if 0 in plot_times:
+            results['times'].append(0.0)
+            results['solutions'].append(u.copy())
+        
+        start_time = time.time()
+        
+        for n in range(1, nt):
+            # 右侧向量 (仅内部节点)
+            rhs = u[1:-1].copy()
+            
+            # 求解三对角系统
+            u_internal_new = scipy.linalg.solve_banded((1, 1), banded_matrix, rhs)
+            
+            # 更新解
+            u[1:-1] = u_internal_new
+            u[0] = 0.0  # 边界条件
+            u[-1] = 0.0
+            
+            t = n * dt
+            
+            # 在指定时间存储解
+            for plot_time in plot_times:
+                if abs(t - plot_time) < dt/2 and plot_time not in [res_t for res_t in results['times']]:
+                    results['times'].append(t)
+                    results['solutions'].append(u.copy())
+        
+        results['computation_time'] = time.time() - start_time
+        results['stability_parameter'] = r
+        
+        return results
     
     def solve_crank_nicolson(self, dt=0.5, plot_times=None):
         """
@@ -170,7 +264,57 @@ class HeatEquationSolver:
         #   - 求解线性系统
         #   - 更新解并应用边界条件
         # TODO: 返回结果字典
-        raise NotImplementedError(f"请在 {__file__} 中实现此函数")
+        # 参数计算
+        r = self.alpha * dt / (self.dx**2)
+        nt = int(self.T_final / dt) + 1
+        
+        #初始化
+        u = self.u_initial.copy()
+        
+        # 为内部节点构建系数矩阵
+        num_internal = self.nx - 2
+        
+        # 左侧矩阵 A
+        banded_matrix_A = np.zeros((3, num_internal))
+        banded_matrix_A[0, 1:] = -r/2  # Upper diagonal
+        banded_matrix_A[1, :] = 1 + r  # Main diagonal
+        banded_matrix_A[2, :-1] = -r/2  # Lower diagonal
+        
+        # 结果存储
+        results = {'times': [], 'solutions': [], 'method': 'Crank-Nicolson'}
+        
+        # 存储初始条件
+        if 0 in plot_times:
+            results['times'].append(0.0)
+            results['solutions'].append(u.copy())
+        
+        start_time = time.time()
+        
+        for n in range(1, nt):
+            # 右侧向量
+            u_internal = u[1:-1]
+            rhs = (r/2) * u[:-2] + (1 - r) * u_internal + (r/2) * u[2:]
+            
+            # 求解三对角系统 A * u^{n+1} = rhs
+            u_internal_new = scipy.linalg.solve_banded((1, 1), banded_matrix_A, rhs)
+            
+            # 更新解
+            u[1:-1] = u_internal_new
+            u[0] = 0.0  # Boundary conditions
+            u[-1] = 0.0
+            
+            t = n * dt
+            
+            # 在指定时间存储解
+            for plot_time in plot_times:
+                if abs(t - plot_time) < dt/2 and plot_time not in [res_t for res_t in results['times']]:
+                    results['times'].append(t)
+                    results['solutions'].append(u.copy())
+        
+        results['computation_time'] = time.time() - start_time
+        results['stability_parameter'] = r
+        
+        return results
     
     def _heat_equation_ode(self, t, u_internal):
         """
@@ -194,7 +338,14 @@ class HeatEquationSolver:
         # TODO: 重构完整解向量（包含边界条件）
         # TODO: 使用 laplace(u_full) / dx² 计算二阶导数
         # TODO: 返回内部节点的时间导数：alpha * d²u/dx²
-        raise NotImplementedError(f"请在 {__file__} 中实现此函数")
+        # 重建包含边界条件的完整解
+        u_full = np.concatenate(([0.0], u_internal, [0.0]))
+        
+        # 使用拉普拉斯算子计算二阶导数
+        d2u_dx2 = laplace(u_full) / (self.dx**2)
+        
+        # 仅返回内部节点的导数
+        return self.alpha * d2u_dx2[1:-1]
     
     def solve_with_solve_ivp(self, method='BDF', plot_times=None):
         """
@@ -229,7 +380,37 @@ class HeatEquationSolver:
         #   - t_eval: plot_times
         # TODO: 重构包含边界条件的完整解
         # TODO: 返回结果字典
-        raise NotImplementedError(f"请在 {__file__} 中实现此函数")
+        # 仅内部节点的初始条件
+        u0_internal = self.u_initial[1:-1]
+        
+        start_time = time.time()
+        
+        # 求解 ODE 系统
+        sol = solve_ivp(
+            fun=self._heat_equation_ode,
+            t_span=(0, self.T_final),
+            y0=u0_internal,
+            method=method,
+            t_eval=plot_times,
+            rtol=1e-8,
+            atol=1e-10
+        )
+        
+        computation_time = time.time() - start_time
+        
+        # 重建包含边界条件的完整解
+        results = {
+            'times': sol.t.tolist(),
+            'solutions': [],
+            'method': f'solve_ivp ({method})',
+            'computation_time': computation_time
+        }
+        
+        for i in range(len(sol.t)):
+            u_full = np.concatenate(([0.0], sol.y[:, i], [0.0]))
+            results['solutions'].append(u_full)
+        
+        return results
     
     def compare_methods(self, dt_explicit=0.01, dt_implicit=0.1, dt_cn=0.5, 
                        ivp_method='BDF', plot_times=None):
@@ -262,7 +443,41 @@ class HeatEquationSolver:
         #   - solve_with_solve_ivp
         # TODO: 打印每种方法的计算时间和稳定性参数
         # TODO: 返回所有结果的字典
-        raise NotImplementedError(f"请在 {__file__} 中实现此函数")
+        print("Solving heat equation using four different methods...")
+        print(f"Domain: [0, {self.L}], Grid points: {self.nx}, Final time: {self.T_final}")
+        print(f"Thermal diffusivity: {self.alpha}")
+        print("-" * 60)
+        
+        # 存储所有方法的结果
+        methods_results = {}
+        
+        # 显式方法
+        print("1. Explicit finite difference (FTCS)...")
+        methods_results['explicit'] = self.solve_explicit(dt_explicit, plot_times)
+        print(f"   Computation time: {methods_results['explicit']['computation_time']:.4f} s")
+        print(f"   Stability parameter r: {methods_results['explicit']['stability_parameter']:.4f}")
+        
+        # 隐式方法
+        print("2. Implicit finite difference (BTCS)...")
+        methods_results['implicit'] = self.solve_implicit(dt_implicit, plot_times)
+        print(f"   Computation time: {methods_results['implicit']['computation_time']:.4f} s")
+        print(f"   Stability parameter r: {methods_results['implicit']['stability_parameter']:.4f}")
+        
+        # Crank-Nicolson 方法
+        print("3. Crank-Nicolson method...")
+        methods_results['crank_nicolson'] = self.solve_crank_nicolson(dt_cn, plot_times)
+        print(f"   Computation time: {methods_results['crank_nicolson']['computation_time']:.4f} s")
+        print(f"   Stability parameter r: {methods_results['crank_nicolson']['stability_parameter']:.4f}")
+        
+        # solve_ivp 方法
+        print(f"4. solve_ivp method ({ivp_method})...")
+        methods_results['solve_ivp'] = self.solve_with_solve_ivp(ivp_method, plot_times)
+        print(f"   Computation time: {methods_results['solve_ivp']['computation_time']:.4f} s")
+        
+        print("-" * 60)
+        print("All methods completed successfully!")
+        
+        return methods_results
     
     def plot_comparison(self, methods_results, save_figure=False, filename='heat_equation_comparison.png'):
         """
@@ -283,7 +498,35 @@ class HeatEquationSolver:
         # TODO: 为每种方法绘制解曲线
         # TODO: 设置标题、标签、图例
         # TODO: 可选保存图像
-        raise NotImplementedError(f"请在 {__file__} 中实现此函数")
+        fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+        axes = axes.flatten()
+        
+        method_names = ['explicit', 'implicit', 'crank_nicolson', 'solve_ivp']
+        colors = ['blue', 'red', 'green', 'orange', 'purple']
+        
+        for idx, method_name in enumerate(method_names):
+            ax = axes[idx]
+            results = methods_results[method_name]
+            
+            # 在不同时间绘制解
+            for i, (t, u) in enumerate(zip(results['times'], results['solutions'])):
+                ax.plot(self.x, u, color=colors[i], label=f't = {t:.1f}', linewidth=2)
+            
+            ax.set_title(f"{results['method']}\n(Time: {results['computation_time']:.4f} s)")
+            ax.set_xlabel('Position x')
+            ax.set_ylabel('Temperature u(x,t)')
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+            ax.set_xlim(0, self.L)
+            ax.set_ylim(-0.1, 1.1)
+        
+        plt.tight_layout()
+        
+        if save_figure:
+            plt.savefig(filename, dpi=300, bbox_inches='tight')
+            print(f"Figure saved as {filename}")
+        
+        plt.show()
     
     def analyze_accuracy(self, methods_results, reference_method='solve_ivp'):
         """
@@ -307,7 +550,37 @@ class HeatEquationSolver:
         # TODO: 统计误差指标
         # TODO: 打印精度分析结果
         # TODO: 返回精度分析字典
-        raise NotImplementedError(f"请在 {__file__} 中实现此函数")
+        if reference_method not in methods_results:
+            raise ValueError(f"Reference method '{reference_method}' not found in results")
+        
+        reference = methods_results[reference_method]
+        accuracy_results = {}
+        
+        print(f"\nAccuracy Analysis (Reference: {reference['method']})")
+        print("-" * 50)
+        
+        for method_name, results in methods_results.items():
+            if method_name == reference_method:
+                continue
+                
+            errors = []
+            for i, (ref_sol, test_sol) in enumerate(zip(reference['solutions'], results['solutions'])):
+                if i < len(results['solutions']):
+                    error = np.linalg.norm(ref_sol - test_sol, ord=2)
+                    errors.append(error)
+            
+            max_error = max(errors) if errors else 0
+            avg_error = np.mean(errors) if errors else 0
+            
+            accuracy_results[method_name] = {
+                'max_error': max_error,
+                'avg_error': avg_error,
+                'errors': errors
+            }
+            
+            print(f"{results['method']:25} - Max Error: {max_error:.2e}, Avg Error: {avg_error:.2e}")
+        
+        return accuracy_results
 
 
 def main():
@@ -319,7 +592,26 @@ def main():
     # TODO: 绘制比较图
     # TODO: 分析精度
     # TODO: 返回结果
-    raise NotImplementedError(f"请在 {__file__} 中实现此函数")
+    solver = HeatEquationSolver(L=20.0, alpha=10.0, nx=21, T_final=25.0)
+    
+    # 比较所有方法
+    plot_times = [0, 1, 5, 15, 25]
+    results = solver.compare_methods(
+        dt_explicit=0.01,
+        dt_implicit=0.1, 
+        dt_cn=0.5,
+        ivp_method='BDF',
+        plot_times=plot_times
+    )
+    
+    # 绘制比较图
+    solver.plot_comparison(results, save_figure=True)
+    
+    # 分析准确性
+    accuracy = solver.analyze_accuracy(results, reference_method='solve_ivp')
+    
+    return solver, results, accuracy
+
 
 
 if __name__ == "__main__":
